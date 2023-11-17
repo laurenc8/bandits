@@ -55,17 +55,18 @@ class Bandit:
             # reward += (np.random.uniform(low = -1, high = 1) + self.q_true[arm]) * p
             # generate the reward under N(real_reward, 1)
             reward += (np.random.normal(self.q_true[arm], 1)) * p
-            self.action_count[arm] += p
+            self.action_count[arm] += 1
         
         self.time += 1
         
         # calculate c
         numerator = reward
         denominator = 0
-        if self.algo == 'Ours':
+        if self.algo == 'Ours' and self.time > self.k:
             for arm, p in action:
                 numerator -= p * self.q_estimation[arm]
-                denominator += p ** 2
+                sigma_sq = 4 * np.log(self.time) / (self.action_count[arm] - 1)
+                denominator += p ** 2 * sigma_sq
             c = numerator/denominator
 
         for arm, p in action:
@@ -73,7 +74,8 @@ class Bandit:
             if self.algo == 'UCB' or len(action) == 1:
                 self.q_estimation[arm] += (reward - self.q_estimation[arm]) / self.action_count[arm]
             elif self.algo == 'Ours':
-                self.q_estimation[arm] += p * p * c / self.action_count[arm]
+                sigma_sq = 4 * np.log(self.time) / (self.action_count[arm] - 1)
+                self.q_estimation[arm] += p * c * sigma_sq / self.action_count[arm]
         
         return reward
 
@@ -95,8 +97,8 @@ def simulate(runs, time, bandits):
     return mean_rewards
 
 def project(runs=2000, time=1000):
-    bandits = [Bandit(), Bandit(algo='Ours')]
-    labels = ["UCB", "Ours"]
+    bandits = [Bandit(), Bandit(algo='Ours', p_mean=0.1), Bandit(algo='Ours', p_mean=0.5), Bandit(algo='Ours', p_mean=0.9)]
+    labels = ["UCB", "FUCB p=0.1", "FUCB p=0.5", "FUCB p=0.9"]
     rewards = simulate(runs, time, bandits)
     plt.figure(figsize=(20, 8))
     for (label, reward) in zip(labels, rewards):
@@ -104,9 +106,9 @@ def project(runs=2000, time=1000):
         # print(reward)
     plt.xlabel("Steps", fontsize=20)
     plt.ylabel("Average Reward (Over 2000 Runs)", fontsize=20)
-    plt.title("UCB vs. Ours", fontsize=20)
+    plt.title("UCB vs. FUCB", fontsize=20)
     plt.legend(fontsize=20)
-    plt.savefig("UCB_vs_Ours.png")
+    plt.savefig("UCB_vs_FUCB.png")
     plt.close()
 
 if __name__ == "__main__":
