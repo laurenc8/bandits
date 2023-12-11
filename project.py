@@ -47,6 +47,9 @@ class Bandit:
         if self.algo == 'UCB':
             q_best = [(UCB_arm, 1)]
         elif self.algo == 'FUCB':
+            # weird p
+            # self.p_mean = max(1 - (1 - self.p_mean) * self.action_count[best_mean_arm] / self.action_count[UCB_arm], 0)
+            
             if best_mean_arm == UCB_arm:
                 q_best = [(UCB_arm, 1)]
             else:
@@ -72,7 +75,7 @@ class Bandit:
         if self.algo == 'FUCB' and self.time > self.k:
             for arm, p in action:
                 numerator -= p * self.q_estimation[arm]
-                sigma_sq = 4 * np.log(self.time) / (self.action_count[arm] - 1)
+                sigma_sq = np.log(self.time) / (self.action_count[arm] - 1)
                 denominator += p ** 2 * sigma_sq
             c = numerator/denominator
 
@@ -81,7 +84,7 @@ class Bandit:
             if self.algo == 'UCB' or len(action) == 1:
                 self.q_estimation[arm] += (reward - self.q_estimation[arm]) / self.action_count[arm]
             elif self.algo == 'FUCB':
-                sigma_sq = 4 * np.log(self.time) / (self.action_count[arm] - 1)
+                sigma_sq = np.log(self.time) / (self.action_count[arm] - 1)
                 self.q_estimation[arm] += p * c * sigma_sq / self.action_count[arm]
         
         return reward
@@ -107,12 +110,11 @@ def simulate(runs, time, bandits):
     mean_regrets = regrets.mean(axis=1)
     return mean_rewards, mean_regrets
 
-def project(runs=2000, time=1000):
-    # bandits = [Bandit(), Bandit(algo='FUCB', p_mean=0.1), Bandit(algo='FUCB', p_mean=0.5), Bandit(algo='FUCB', p_mean=0.9)]
-    # labels = ["UCB", "FUCB p=0.1", "FUCB p=0.5", "FUCB p=0.9"]
-    bandits = [Bandit(), Bandit(algo='FUCB', half_life=400)]
-    labels = ["UCB", "FUCB half_life=400"]
+def project(runs=2000, time=2000):
+    bandits = [Bandit(), Bandit(algo='FUCB', half_life=100), Bandit(algo='FUCB', half_life=200), Bandit(algo='FUCB', half_life=400)]
+    labels = ["UCB", "FUCB half_life=100", "FUCB half_life=200", "FUCB half_life=400"]
     rewards, regrets = simulate(runs, time, bandits)
+
     plt.figure(figsize=(20, 8))
     for (label, reward) in zip(labels, rewards):
         plt.plot(reward, label=label)
