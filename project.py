@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from tqdm import trange
 
 
@@ -125,8 +126,10 @@ def decaying_proportions():
     return bandits, labels, title
 
 def project(runs=4000, time=2000):
-    bandits, labels, title = constant_proportions()
+    bandits, labels, title = decaying_proportions()
     rewards, regrets = simulate(runs, time, bandits)
+    pd.DataFrame(rewards).to_csv(title + '_rewards.csv')
+    pd.DataFrame(regrets).to_csv(title + '_regrets.csv')
 
     plt.figure(figsize=(10, 8))
     for (label, reward) in zip(labels, rewards):
