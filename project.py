@@ -9,6 +9,7 @@ class Bandit:
     # @algo: 'UCB' or 'FUCB'
     # @p_mean: weight assigned to best_mean_arm in FUCB
     # @half_life: alternative way of specifying p_mean = 2^(-t/half_life)
+    # @reward_dist: 'Normal' for r ~ N(real_reward, 1) or 'Uniform' for r ~ Unif(real_reward - 1, real_reward + 1)
     def __init__(
         self,
         k_arm=10,
@@ -111,9 +112,20 @@ def simulate(runs, time, bandits):
     mean_regrets = regrets.mean(axis=1)
     return mean_rewards, mean_regrets
 
-def project(runs=4000, time=2000):
+def constant_proportions():
     bandits = [Bandit(), Bandit(algo='FUCB', p_mean=0.1), Bandit(algo='FUCB', p_mean=0.5), Bandit(algo='FUCB', p_mean=0.9)]
     labels = ["UCB", "FUCB p=0.1", "FUCB p=0.5", "FUCB p=0.9"]
+    title = 'Constant Proportions'
+    return bandits, labels, title
+
+def decaying_proportions():
+    bandits = [Bandit(), Bandit(algo='FUCB', half_life=100), Bandit(algo='FUCB', half_life=200), Bandit(algo='FUCB', half_life=400)]
+    labels = ["UCB", "FUCB half_life=100", "FUCB half_life=200", "FUCB half_life=400"]
+    title = 'Decaying Proportions'
+    return bandits, labels, title
+
+def project(runs=4000, time=2000):
+    bandits, labels, title = constant_proportions()
     rewards, regrets = simulate(runs, time, bandits)
 
     plt.figure(figsize=(10, 8))
@@ -121,7 +133,7 @@ def project(runs=4000, time=2000):
         plt.plot(reward, label=label)
     plt.xlabel("Steps", fontsize=20)
     plt.ylabel("Average Reward (Over " + str(runs) + " Runs)", fontsize=20)
-    plt.title("UCB vs. FUCB with Constant Proportions", fontsize=20)
+    plt.title("UCB vs. FUCB with " + title, fontsize=20)
     plt.legend(fontsize=20)
     plt.savefig("UCB_vs_FUCB_Reward.png")
     plt.close()
@@ -131,7 +143,7 @@ def project(runs=4000, time=2000):
         plt.plot(regret, label=label)
     plt.xlabel("Steps", fontsize=20)
     plt.ylabel("Average Regret (Over " + str(runs) + " Runs)", fontsize=20)
-    plt.title("UCB vs. FUCB with Constant Proportions", fontsize=20)
+    plt.title("UCB vs. FUCB with " + title, fontsize=20)
     plt.legend(fontsize=20)
     plt.savefig("UCB_vs_FUCB_Regret.png")
     plt.close()
