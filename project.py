@@ -16,6 +16,7 @@ class Bandit:
         algo='UCB',
         p_mean=0.5,
         half_life=0,
+        reward_dist='Normal',
     ):
         self.k = k_arm
         self.time = 0
@@ -23,6 +24,7 @@ class Bandit:
         self.algo = algo
         self.p_mean = p_mean
         self.half_life = half_life
+        self.reward_dist = reward_dist
 
     def reset(self):
         # we'll use self.q_true to track the real reward for each action
@@ -42,14 +44,11 @@ class Bandit:
     def act(self):
         if self.half_life > 0:
             self.p_mean = 2 ** (-self.time / self.half_life)
-        UCB_arm = np.argmax(self.q_estimation + np.sqrt(4 * np.log(self.time) / self.action_count))
+        UCB_arm = np.argmax(self.q_estimation + np.sqrt(8 * np.log(self.time) / self.action_count))
         best_mean_arm = np.random.choice(np.where(self.q_estimation == np.max(self.q_estimation))[0])
         if self.algo == 'UCB':
             q_best = [(UCB_arm, 1)]
         elif self.algo == 'FUCB':
-            # weird p
-            # self.p_mean = max(1 - (1 - self.p_mean) * self.action_count[best_mean_arm] / self.action_count[UCB_arm], 0)
-            
             if best_mean_arm == UCB_arm:
                 q_best = [(UCB_arm, 1)]
             else:
@@ -61,10 +60,12 @@ class Bandit:
     def step(self, action):
         reward = 0
         for arm, p in action:
-            # generate the reward under Unif(real_reward - 1, real_reward + 1)
-            # reward += (np.random.uniform(low = -1, high = 1) + self.q_true[arm]) * p
-            # generate the reward under N(real_reward, 1)
-            reward += (np.random.normal(self.q_true[arm], 1)) * p
+            if self.reward_dist == 'Normal':
+                # generate the reward under N(real_reward, 1)
+                reward += (np.random.normal(self.q_true[arm], 1)) * p
+            elif self.reward_dist == 'Uniform':
+                # generate the reward under Unif(real_reward - 1, real_reward + 1)
+                reward += (np.random.uniform(low = -1, high = 1) + self.q_true[arm]) * p
             self.action_count[arm] += 1
         
         self.time += 1
@@ -75,7 +76,7 @@ class Bandit:
         if self.algo == 'FUCB' and self.time > self.k:
             for arm, p in action:
                 numerator -= p * self.q_estimation[arm]
-                sigma_sq = np.log(self.time) / (self.action_count[arm] - 1)
+                sigma_sq = 2 * np.log(self.time) / (self.action_count[arm] - 1)
                 denominator += p ** 2 * sigma_sq
             c = numerator/denominator
 
@@ -84,7 +85,7 @@ class Bandit:
             if self.algo == 'UCB' or len(action) == 1:
                 self.q_estimation[arm] += (reward - self.q_estimation[arm]) / self.action_count[arm]
             elif self.algo == 'FUCB':
-                sigma_sq = np.log(self.time) / (self.action_count[arm] - 1)
+                sigma_sq = 2 * np.log(self.time) / (self.action_count[arm] - 1)
                 self.q_estimation[arm] += p * c * sigma_sq / self.action_count[arm]
         
         return reward
@@ -110,27 +111,27 @@ def simulate(runs, time, bandits):
     mean_regrets = regrets.mean(axis=1)
     return mean_rewards, mean_regrets
 
-def project(runs=2000, time=2000):
-    bandits = [Bandit(), Bandit(algo='FUCB', half_life=100), Bandit(algo='FUCB', half_life=200), Bandit(algo='FUCB', half_life=400)]
-    labels = ["UCB", "FUCB half_life=100", "FUCB half_life=200", "FUCB half_life=400"]
+def project(runs=4000, time=2000):
+    bandits = [Bandit(), Bandit(algo='FUCB', p_mean=0.1), Bandit(algo='FUCB', p_mean=0.5), Bandit(algo='FUCB', p_mean=0.9)]
+    labels = ["UCB", "FUCB p=0.1", "FUCB p=0.5", "FUCB p=0.9"]
     rewards, regrets = simulate(runs, time, bandits)
 
-    plt.figure(figsize=(20, 8))
+    plt.figure(figsize=(10, 8))
     for (label, reward) in zip(labels, rewards):
         plt.plot(reward, label=label)
     plt.xlabel("Steps", fontsize=20)
-    plt.ylabel("Average Reward (Over 2000 Runs)", fontsize=20)
-    plt.title("UCB vs. FUCB", fontsize=20)
+    plt.ylabel("Average Reward (Over " + str(runs) + " Runs)", fontsize=20)
+    plt.title("UCB vs. FUCB with Constant Proportions", fontsize=20)
     plt.legend(fontsize=20)
     plt.savefig("UCB_vs_FUCB_Reward.png")
     plt.close()
 
-    plt.figure(figsize=(20, 8))
+    plt.figure(figsize=(10, 8))
     for (label, regret) in zip(labels, regrets):
         plt.plot(regret, label=label)
     plt.xlabel("Steps", fontsize=20)
-    plt.ylabel("Average Regret (Over 2000 Runs)", fontsize=20)
-    plt.title("UCB vs. FUCB", fontsize=20)
+    plt.ylabel("Average Regret (Over " + str(runs) + " Runs)", fontsize=20)
+    plt.title("UCB vs. FUCB with Constant Proportions", fontsize=20)
     plt.legend(fontsize=20)
     plt.savefig("UCB_vs_FUCB_Regret.png")
     plt.close()
