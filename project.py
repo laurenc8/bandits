@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from tqdm import trange
+from math import factorial
 
 
 class Bandit:
@@ -10,7 +11,7 @@ class Bandit:
     # @algo: 'UCB' or 'FUCB'
     # @p_mean: weight assigned to best_mean_arm in FUCB
     # @half_life: alternative way of specifying p_mean = 2^(-t/half_life)
-    # @reward_dist: 'Normal' for r ~ N(real_reward, 1) or 'Uniform' for r ~ Unif(real_reward - 1, real_reward + 1)
+    # @reward_dist: 'Normal' for r ~ N(real_reward, 1) or 'Uniform' for r ~ Unif(real_reward - 1/4, real_reward + 1/4)
     def __init__(
         self,
         k_arm=10,
@@ -66,8 +67,8 @@ class Bandit:
                 # generate the reward under N(real_reward, 1)
                 reward += (np.random.normal(self.q_true[arm], 1)) * p
             elif self.reward_dist == 'Uniform':
-                # generate the reward under Unif(real_reward - 1, real_reward + 1)
-                reward += (np.random.uniform(low = -1, high = 1) + self.q_true[arm]) * p
+                # generate the reward under Unif(real_reward - 1/4, real_reward + 1/4)
+                reward += (np.random.uniform(low = -1/4, high = 1/4) + self.q_true[arm]) * p
             self.action_count[arm] += 1
         
         self.time += 1
@@ -113,43 +114,123 @@ def simulate(runs, time, bandits):
     mean_regrets = regrets.mean(axis=1)
     return mean_rewards, mean_regrets
 
-def constant_proportions():
-    bandits = [Bandit(), Bandit(algo='FUCB', p_mean=0.1), Bandit(algo='FUCB', p_mean=0.5), Bandit(algo='FUCB', p_mean=0.9)]
-    labels = ["UCB", "FUCB p=0.1", "FUCB p=0.5", "FUCB p=0.9"]
+# generate the bandits and graph labels/title for UCB vs. FUCB with constant proportions
+def constant_proportions(p_means):
+    bandits = [Bandit()]
+    labels = ['UCB']
+    for p_mean in p_means:
+        bandits.append(Bandit(algo='FUCB', p_mean=p_mean))
+        labels.append('FUCB p=' + str(p_mean))
     title = 'Constant Proportions'
     return bandits, labels, title
 
-def decaying_proportions():
-    bandits = [Bandit(), Bandit(algo='FUCB', half_life=100), Bandit(algo='FUCB', half_life=200), Bandit(algo='FUCB', half_life=400)]
-    labels = ["UCB", "FUCB half_life=100", "FUCB half_life=200", "FUCB half_life=400"]
+# generate the bandits and graph labels/title for UCB vs. FUCB with exponentially decaying proportions
+def decaying_proportions(half_lives):
+    bandits = [Bandit()]
+    labels = ['UCB']
+    for half_life in half_lives:
+        bandits.append(Bandit(algo='FUCB', half_life=half_life))
+        labels.append('FUCB half_life=' + str(half_life))
     title = 'Decaying Proportions'
     return bandits, labels, title
 
-def project(runs=4000, time=2000):
-    bandits, labels, title = decaying_proportions()
+# find time step of min point of dip
+def find_min(reward):
+    sg = savitzky_golay(savitzky_golay(reward, window_size=49, order=1), window_size=49, order=1)
+    min_value = 1
+    for i in range(70, len(sg)):
+        if sg[i] < min_value:
+            min_value = sg[i]
+            min_index = i
+    return min_index
+
+# smooth
+def savitzky_golay(y, window_size, order, deriv=0, rate=1):
+    try:
+        window_size = np.abs(int(window_size))
+        order = np.abs(int(order))
+    except ValueError as msg:
+        raise ValueError("window_size and order have to be of type int")
+    if window_size % 2 != 1 or window_size < 1:
+        raise TypeError("window_size size must be a positive odd number")
+    if window_size < order + 2:
+        raise TypeError("window_size is too small for the polynomials order")
+    order_range = range(order+1)
+    half_window = (window_size -1) // 2
+    # precompute coefficients
+    b = np.mat([[k**i for i in order_range] for k in range(-half_window, half_window+1)])
+    m = np.linalg.pinv(b).A[deriv] * rate**deriv * factorial(deriv)
+    # pad the signal at the extremes with values taken from the signal itself
+    firstvals = y[0] - np.abs( y[1:half_window+1][::-1] - y[0] )
+    lastvals = y[-1] + np.abs(y[-half_window-1:-1][::-1] - y[-1])
+    y = np.concatenate((firstvals, y, lastvals))
+    return np.convolve( m[::-1], y, mode='valid')
+
+# generate graphs
+def beautify_graph(name, cols, labels, title, type, runs, time):
+    df = pd.read_csv(name + '.csv', index_col='Unnamed: 0').T
+    df.loc[str(len(df))] = df.iloc[-1]
+    df = df[cols]
+    if len(cols) <= 4:
+        c = [plt.cm.BuPu([0.8]), plt.cm.RdPu([0.6]), plt.cm.GnBu([0.8]), plt.cm.BuGn([0.8])]
+    else:
+        c = plt.cm.plasma(np.linspace(0, 0.8, len(cols)))
+    for i in range(len(cols)):
+        if type == 'Regret':
+            plt.plot(df[cols[i]], linewidth=1.5, c=c[i], label=labels[i])
+        elif type == 'Reward':
+            plt.plot(df[cols[i]], alpha=0.2, c=c[i])
+            plt.plot(savitzky_golay(df[cols[i]], 49, 1), alpha=1, linewidth=1.5, c=c[i], label=labels[i])
+    plt.xticks(range(0, time + 1, time // 8))
+    plt.legend()
+    plt.xlabel('Steps')
+    plt.ylabel('Average ' + type + ' (Over ' + str(runs) + ' Runs)')
+    plt.title('UCB vs. FUCB with ' + title)
+    plt.savefig(name + '.png')
+    plt.close()
+
+def project(runs=20, time=100):
+    # change params to list of p_means or list of half_lives depending on constant_proportions or decaying_proportions
+    params = [100, 200, 400]
+    bandits, labels, title = decaying_proportions(params)
     rewards, regrets = simulate(runs, time, bandits)
-    pd.DataFrame(rewards).to_csv(title + '_rewards.csv')
-    pd.DataFrame(regrets).to_csv(title + '_regrets.csv')
 
-    plt.figure(figsize=(10, 8))
-    for (label, reward) in zip(labels, rewards):
-        plt.plot(reward, label=label)
-    plt.xlabel("Steps", fontsize=20)
-    plt.ylabel("Average Reward (Over " + str(runs) + " Runs)", fontsize=20)
-    plt.title("UCB vs. FUCB with " + title, fontsize=20)
-    plt.legend(fontsize=20)
-    plt.savefig("UCB_vs_FUCB_Reward.png")
-    plt.close()
+    # save data to csv
+    rewards_name = title + '_rewards_' + str(params)
+    regrets_name = title + '_regrets_' + str(params)
+    pd.DataFrame(rewards).to_csv(rewards_name + '.csv')
+    pd.DataFrame(regrets).to_csv(regrets_name + '.csv')
 
-    plt.figure(figsize=(10, 8))
-    for (label, regret) in zip(labels, regrets):
-        plt.plot(regret, label=label)
-    plt.xlabel("Steps", fontsize=20)
-    plt.ylabel("Average Regret (Over " + str(runs) + " Runs)", fontsize=20)
-    plt.title("UCB vs. FUCB with " + title, fontsize=20)
-    plt.legend(fontsize=20)
-    plt.savefig("UCB_vs_FUCB_Regret.png")
-    plt.close()
+    # save graphs
+    beautify_graph(rewards_name,
+                   list(range(len(rewards))),
+                   labels,
+                   title,
+                   'Reward',
+                   runs,
+                   time)
 
-if __name__ == "__main__":
+    beautify_graph(regrets_name,
+                   list(range(len(regrets))),
+                   labels,
+                   title,
+                   'Regret',
+                   runs,
+                   time)
+    
+    if title == 'Decaying Proportions':
+        x = []
+        dips = []
+        for i in range(1, len(rewards)):
+            x.append(100 * i)
+            dips.append(find_min(rewards[i]))
+        plt.figure(figsize=(10, 8))
+        plt.plot(x, dips)
+        plt.xlabel('Half Life')
+        plt.ylabel('Timestep')
+        plt.title(f'Time of Minimum Reward of FUCB with {title}')
+        plt.savefig(title + '_dips_' + str(params) + '.png')
+        plt.close()
+
+if __name__ == '__main__':
     project()
