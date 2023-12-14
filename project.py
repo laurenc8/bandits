@@ -189,6 +189,12 @@ def beautify_graph(name, cols, labels, title, type, runs, time):
     plt.savefig(name + '.png')
     plt.close()
 
+def find_intersection(regret1, regret2):
+    for t in range(len(regret2)-1, -1, -1):
+        if regret1[t] > regret2[t]:
+            return t
+    return len(regret1)
+
 def project(runs=20, time=100):
     # change params to list of p_means or list of half_lives depending on constant_proportions or decaying_proportions
     params = [100, 200, 400]
@@ -219,18 +225,27 @@ def project(runs=20, time=100):
                    time)
     
     if title == 'Decaying Proportions':
-        x = []
         dips = []
         for i in range(1, len(rewards)):
-            x.append(100 * i)
             dips.append(find_min(rewards[i]))
         plt.figure(figsize=(10, 8))
-        plt.plot(x, dips)
+        plt.plot(params, dips)
         plt.xlabel('Half Life')
         plt.ylabel('Timestep')
         plt.title(f'Time of Minimum Reward of FUCB with {title}')
         plt.savefig(title + '_dips_' + str(params) + '.png')
         plt.close()
+    else:
+        intersections = []
+        for i in range(1, len(regrets)):
+            intersections.append(find_intersection(regrets[0], regrets[i]))
+        plt.figure(figsize=(10, 8))
+        plt.plot(params, intersections)
+        plt.xlabel("p")
+        plt.ylabel("Timestep")
+        plt.title(f"Time until regret of FUCB with {title} exceeds UCB")
+        plt.savefig(title + '_Regret_Intersection_' + str(params) + '.png')
+        plt.close()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     project()
